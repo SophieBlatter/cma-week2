@@ -1,0 +1,513 @@
+---
+title: "Uebung2"
+format: html
+editor: visual
+---
+# Demo
+Tipp: press Fn than F1 to get help of the operation.
+
+```{r}
+now <- Sys.time()
+
+later <- now + 10000
+
+later
+```
+## difftime()
+Assume we want to calculate the timelag between subsequent positions. To achieve this we can use the function difftime() combined with lead() from dplyr. You can also specify the unit of the output.
+
+```{r}
+time_difference <- difftime(later, now)
+
+time_difference
+
+time_difference <- difftime(later, now, units = "secs")
+
+time_difference
+```
+
+```{r}
+class(time_difference)
+
+
+str(time_difference)
+
+```
+
+However in our case, numeric values would be more handy than the class difftime. So we’ll wrap the command in as.numeric():
+```{r}
+time_difference <- as.numeric(difftime(later, now, units = "secs"))
+
+str(time_difference)
+
+class(time_difference)
+
+```
+
+In fact, we will use this exact operation multiple times, so let’s create a function for this:
+```{r}
+difftime_secs <- function(later, now){
+    as.numeric(difftime(later, now, units = "secs"))
+}
+```
+## `lead()` / `lag()` {#sec-lead-lag}
+
+`lead()` and `lag()` return a vector of the same length as the input, just offset by a specific number of values (default is 1). Consider the following sequence:
+
+```{r}
+numbers <- 1:10
+
+numbers
+```
+
+We can now run `lead()` and `lag()` on this sequence to illustrate the output. `n =` specifies the offset, `default =` specifies the default value used to "fill" the emerging "empty spaces" of the vector. This helps us performing operations on subsequent values in a vector (or rows in a table).
+
+```{r}
+library("dplyr")
+
+lead(numbers)
+
+lead(numbers, n = 2)
+
+lag(numbers)
+
+lag(numbers, n = 5)
+
+lag(numbers, n = 5, default = 0)
+```
+
+### `mutate()`
+
+Using the above functions (`difftime()` and `lead()`), we can calculate the time lag, that is, the time difference between consecutive positions. We will try this on a dummy version of our wild boar dataset.
+
+```{r}
+wildschwein <- tibble(
+    TierID = c(rep("Hans", 5), rep("Klara", 5)),
+    DatetimeUTC = rep(as.POSIXct("2015-01-01 00:00:00", tz = "UTC") + 0:4 * 15 * 60, 2)
+)
+
+wildschwein
+```
+
+
+To calculate the `timelag` with base-R, we need to mention `wildschwein` three times 
+
+```{r}
+wildschwein$timelag <- difftime_secs(lead(wildschwein$DatetimeUTC), wildschwein$DatetimeUTC)
+```
+
+Using `mutate()` we can simplify this operation slightly:
+
+```{r}
+wildschwein <- mutate(wildschwein, timelag = difftime_secs(lead(DatetimeUTC), DatetimeUTC))
+
+wildschwein
+```
+
+### `group_by()`
+
+You might have noticed that `timelag` is calculated across different individuals (`Hans` and `Klara`), which does not make much sense. 
+To avoid this, we need to specify that `timelag` should just be calculated between consecutive rows *of the same individual*. We can implement this by using `group_by()`. 
+
+```{r}
+wildschwein <- group_by(wildschwein, TierID)
+```
+
+After adding this grouping variable, calculating the `timelag` automatically accounts for the individual trajectories.
+
+```{r}
+wildschwein <- mutate(wildschwein, timelag = difftime(lead(DatetimeUTC), DatetimeUTC))
+
+wildschwein
+```
+
+### `summarise()`
+
+If we want to summarise our data and get metrics *per animal*, we can use the `dplyr` function `summarise()`. In contrast to `mutate()`, which just adds a new column to the dataset, `summarise()` "collapses" the data to one row per individual (specified by `group_by`).
+
+```{r}
+summarise(wildschwein, mean = mean(timelag, na.rm = TRUE))
+```
+
+Note: You can do `mutate()` and `summarise()` on `sf` objects as well. However, `summarise()` tries to coerce all geometries into one object, which can take along time. To avoid this, use `st_drop_geometry()` before using `summarise()`. 
+
+### Piping 
+
+The code above may be a bit hard to read, since it has so many nested functions which need to be read from the inside out. In order to make code readable in a more human-friendly way, we can use the piping command `|>` from `magrittr`, which is included in `dplyr` and the `tidyverse`. The above code then looks like this:
+
+```{r}
+wildschwein |>                                     # Take wildschwein...
+    group_by(TierID) |>                            # ...group it by TierID
+    summarise(                                     # Summarise the data...
+        mean_timelag = mean(timelag, na.rm = TRUE) # ...by calculating the mean timelag
+    )
+```
+
+<!-- ### Bring it all together...
+
+Here is the same approach with a different dataset:
+
+```{r}
+pigs <- tibble(
+    TierID = c(8001, 8003, 8004, 8005, 8800, 8820, 3000, 3001, 3002, 3003, 8330, 7222),
+    sex = c("M", "M", "M", "F", "M", "M", "F", "F", "M", "F", "M", "F"),
+    age = c("A", "A", "J", "A", "J", "J", "J", "A", "J", "J", "A", "A"),
+    weight = c(50.755, 43.409, 12.000, 16.787, 20.987, 25.765, 22.0122, 21.343, 12.532, 54.32, 11.027, 88.08)
+)
+
+pigs
+
+pigs |>
+    summarise(
+        mean_weight = mean(weight)
+    )
+
+pigs |>
+    group_by(sex) |>
+    summarise(
+        mean_weight = mean(weight)
+    )
+
+pigs |>
+    group_by(sex, age) |>
+    summarise(
+        mean_weight = mean(weight)
+    )
+```
+
+-->
+## Exercise A
+### Task 1 Import your data
+```{r}
+library("readr")
+library("sf")
+library(dplyr)
+wildschwein_BE <- read_delim("wildschwein_BE_2056.csv", ",")
+
+wildschwein_BE <- st_as_sf(wildschwein_BE, coords = c("E", "N"), crs = 2056)
+```
+
+### Task 2 Getting an overview
+```{r}
+difftime_secs <- function(later, now){
+    as.numeric(difftime(later, now, units = "secs"))
+}
+```
+
+new coloum timelag:
+```{r}
+wildschwein_BE <- wildschwein_BE |> 
+    mutate(timelag = difftime_secs(lead(DatetimeUTC), DatetimeUTC))
+
+head(wildschwein_BE)
+```
+
+
+How many individuals were tracked?
+```{r}
+num_individuals <- wildschwein_BE |> 
+  distinct(TierID) |> 
+  nrow()
+
+num_individuals
+
+# answer: there are 3 individuals tracked.
+```
+
+
+For how long were the individual tracked? Are there gaps?
+```{r}
+#duration
+tracking_duration <- wildschwein_BE |> 
+  group_by(TierID) |> 
+  summarize(tracking_start = min(DatetimeUTC),
+            tracking_end = max(DatetimeUTC),
+            duration = difftime(max(DatetimeUTC), min(DatetimeUTC), units = "days"))
+# answer: Tier 2A has been tracked for 338.58 days
+# Tier 16A has been tracked for 234.67 days
+# Tier 18A has been tracked for 261.66 days
+
+#gaps
+threshold <- 24
+gap <- wildschwein_BE |> 
+    arrange(TierID, DatetimeUTC) |> 
+    group_by(TierID) |> 
+    mutate(time_gap = as.numeric(difftime(DatetimeUTC, lag(DatetimeUTC), units = "hours"))) |> 
+  filter(time_gap > threshold)
+gap
+# answer: the animals are tracked continiously without any gaps.
+```
+
+
+Were all individuals tracked concurrently or sequentially?
+```{r}
+# there must be overlapping times if the animals are tracked concurrently
+overlap <- wildschwein_BE |> 
+  arrange(TierID, DatetimeUTC) |> 
+  group_by(TierID) |> 
+  mutate(previous_end = lag(DatetimeUTC)) |> 
+  filter(!is.na(previous_end) & DatetimeUTC <= previous_end)
+
+# answer: nrow(overlap) == 0 -> individuals were tracked sequentially.
+```
+
+
+What is the temporal sampling interval between the locations?
+```{r}
+interval <- wildschwein_BE |> 
+  arrange(DatetimeUTC) |> 
+  mutate(time_diff_seconds = as.numeric(difftime(lead(DatetimeUTC), DatetimeUTC, units = "secs")))
+
+interval <- median(interval$time_diff_seconds, na.rm = TRUE)
+
+interval
+# answer: The median temporal sampling interval between locations is 903 seconds."
+```
+
+### Task 3: Distance between locations
+```{r}
+library(sf)
+
+later <- lag(wildschwein_BE$geometry)
+now <- wildschwein_BE$geometry
+
+st_distance(later, now, by_element = TRUE)  # by_element must be set to TRUE
+distance_by_element <- function(later, now){
+  as.numeric(
+    st_distance(later, now, by_element = TRUE)
+  )
+}
+
+# new column 
+wildschwein_BE <- wildschwein_BE |> 
+  mutate(steplength = distance_by_element(lag(geometry), geometry))
+
+View(wildschwein_BE)
+```
+
+### Task 4 Deriving distance & speed
+```{r}
+wildschwein_BE <- wildschwein_BE |> 
+    mutate(steplength= as.numeric(st_distance(lag(geometry), geometry, by_element = TRUE)))
+
+wildschwein_BE <- wildschwein_BE |> 
+  mutate(speed = steplength / timelag) 
+
+View(wildschwein_BE)
+
+```
+
+### Task 5 plausibility check
+```{r}
+wildschwein_sample <- wildschwein_BE |>
+  filter(TierName == "Sabi") |> 
+  head(100)
+# visualise
+library(tmap)
+tmap_mode("view")
+
+tm_shape(wildschwein_sample) + 
+  tm_dots()
+
+# points to interconnecting lines
+wildschwein_sample_line <- wildschwein_sample |> 
+  # dissolve to a MULTIPOINT:
+  summarise(do_union = FALSE) |> 
+  st_cast("LINESTRING")
+
+tmap_options(basemaps = "OpenStreetMap")
+
+tm_shape(wildschwein_sample_line) +
+  tm_lines() +
+  tm_shape(wildschwein_sample) + 
+  tm_dots()
+```
+## Exercise B
+```{r}
+library("readr")
+library("sf")
+library("dplyr")
+
+difftime_secs <- function(x, y){
+  as.numeric(difftime(x, y, units = "secs"))
+}
+
+distance_by_element <- function(later, now){
+  as.numeric(
+    st_distance(later, now, by_element = TRUE)
+  )
+}
+caro <- read_delim("caro60.csv", ",") |>
+  st_as_sf(coords = c("E","N"), crs = 2056) |> 
+  select(DatetimeUTC)
+```
+### Task 1
+```{r}
+caro <- caro |> 
+    mutate(timelag_before = difftime_secs(DatetimeUTC, lag(DatetimeUTC)))
+
+caro <- caro |> 
+    mutate(timelag_follow = difftime_secs(lead(DatetimeUTC), (DatetimeUTC)))
+
+caro <- caro |> 
+  mutate(timelag = timelag_before + timelag_follow)
+
+# Calculate the Euclidean distance (steplength) between subsequent locations
+caro <- caro |> 
+  mutate(steplength_prev = distance_by_element(geometry, lag(geometry)))
+
+
+caro <- caro |> 
+  mutate(steplength_next = distance_by_element(lead(geometry), geometry))
+
+
+caro <- caro |> 
+  mutate(steplength = steplength_prev + steplength_next)
+
+
+caro <- caro |> 
+  mutate(speed = steplength / timelag)
+View(caro)
+
+# die erste zeile schein korrekt zu sein, danah weichen die Were B von der Vorlage...???
+
+```
+
+### Task 2
+```{r}
+caro <- caro |> 
+  mutate(timelag2_prev = difftime_secs(DatetimeUTC, lag(DatetimeUTC, n = 2)))
+
+
+caro <- caro |> 
+  mutate(timelag2_next = difftime_secs(lead(DatetimeUTC, n = 2), DatetimeUTC))
+
+
+caro <- caro |> 
+  mutate(timelag2 = timelag2_prev + timelag2_next)
+
+
+caro <- caro |> 
+  mutate(steplength2_prev = distance_by_element(geometry, lag(geometry, n = 2)))
+
+
+caro <- caro |> 
+  mutate(steplength2_next = distance_by_element(geometry, lead(geometry, n = 2)))
+
+
+caro <- caro |> 
+  mutate(steplength2 = steplength2_prev + steplength2_next)
+
+
+caro <- caro |> 
+  mutate(speed2 = steplength2 / timelag2)
+
+
+caro |> 
+  # drop geometry and select only specific columns
+  # to display relevant data only
+  st_drop_geometry() |> 
+  select(timelag2, steplength2, speed2) |> 
+  head()
+
+# kleine Abweichungen nach den ersten paar Zeilen???
+```
+### Task 3 
+```{r}
+
+caro <- caro |> 
+  mutate(timelag3_prev = difftime_secs(DatetimeUTC, lag(DatetimeUTC, n = 4)))
+
+caro <- caro |> 
+  mutate(timelag3_next = difftime_secs(lead(DatetimeUTC, n = 4), DatetimeUTC))
+
+
+caro <- caro |> 
+  mutate(timelag3 = timelag3_prev + timelag3_next)
+
+
+caro <- caro |> 
+  mutate(steplength3_prev = distance_by_element(geometry, lag(geometry, n = 4)))
+
+
+caro <- caro |> 
+  mutate(steplength3_next = distance_by_element(geometry, lead(geometry, n = 4)))
+
+
+caro <- caro |> 
+  mutate(steplength3 = steplength3_prev + steplength3_next)
+
+
+caro <- caro %>%
+  mutate(speed3 = steplength3 / timelag3)
+
+caro |> 
+  st_drop_geometry() |> 
+  select(timelag3, steplength3, speed3) |> 
+  head()
+
+# erste Zeile mit werten ist korrekt, danah folgen kleine Abweichungen??
+
+```
+### Task 4
+```{r}
+caro |> 
+  st_drop_geometry() |> 
+  select(DatetimeUTC, speed, speed2, speed3)
+
+library(ggplot2)
+
+ggplot(caro, aes(y = speed)) + 
+  geom_boxplot(outliers = FALSE)
+
+library(tidyr)
+
+# before pivoting, let's simplify our data.frame
+caro2 <- caro |> 
+  st_drop_geometry() |> 
+  select(DatetimeUTC, speed, speed2, speed3)
+
+caro_long <- caro2 |> 
+  pivot_longer(c(speed, speed2, speed3))
+  
+head(caro_long)
+
+ggplot(caro_long, aes(name, value)) +
+  geom_boxplot(outliers = FALSE)
+
+# long table is correct, the boxplot dont seem correct since they make outliers (gibt warnmeldung zu outliers)
+
+```
+## Exercise C
+Import your data as a data frame and convert it to an sf object, using the correct CRS information
+Convert your data to CH1903+ LV95
+Make a map of your data using ggplot2 or tmap.
+
+```{r}
+library("readr")
+library("sf")
+
+data <- read_delim("posmo_2024-04-06T00_00_00+02_00-2024-05-03T23_59_59+02_00.csv", ",")
+
+data <- st_as_sf(data, coords = c("lon_x", "lat_y"), crs = 4326)
+
+st_crs(data)
+
+data <- st_transform(data, crs = st_crs("+init=epsg:2056"))
+
+View(data)
+
+data_line <- data |> 
+  # dissolve to a MULTIPOINT:
+  summarise(do_union = FALSE) |> 
+  st_cast("LINESTRING")
+
+tmap_options(basemaps = "OpenStreetMap")
+
+tm_shape(data_line) +
+  tm_lines() +
+  tm_shape(data) + 
+  tm_dots()
+
+```
+
