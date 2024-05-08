@@ -1,5 +1,5 @@
 ---
-title: "Uebung2"
+title: "Demo2_Uebung2"
 format: html
 editor: visual
 ---
@@ -181,7 +181,7 @@ pigs |>
 ```{r}
 library("readr")
 library("sf")
-library(dplyr)
+library("dplyr")
 wildschwein_BE <- read_delim("wildschwein_BE_2056.csv", ",")
 
 wildschwein_BE <- st_as_sf(wildschwein_BE, coords = c("E", "N"), crs = 2056)
@@ -266,7 +266,7 @@ interval
 
 ### Task 3: Distance between locations
 ```{r}
-library(sf)
+library("sf")
 
 later <- lag(wildschwein_BE$geometry)
 now <- wildschwein_BE$geometry
@@ -369,7 +369,7 @@ caro <- caro |>
   mutate(speed = steplength / timelag)
 View(caro)
 
-# die erste zeile schein korrekt zu sein, danah weichen die Were B von der Vorlage...???
+# die erste zeile scheint korrekt zu sein, danach weichen die Werte B von der Vorlage...???
 
 ```
 
@@ -438,7 +438,7 @@ caro <- caro |>
   mutate(steplength3 = steplength3_prev + steplength3_next)
 
 
-caro <- caro %>%
+caro <- caro |> 
   mutate(speed3 = steplength3 / timelag3)
 
 caro |> 
@@ -446,7 +446,7 @@ caro |>
   select(timelag3, steplength3, speed3) |> 
   head()
 
-# erste Zeile mit werten ist korrekt, danah folgen kleine Abweichungen??
+# erste Zeile mit werten ist korrekt, danach folgen kleine Abweichungen??
 
 ```
 ### Task 4
